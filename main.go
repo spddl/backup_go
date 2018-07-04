@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"./archivex" // "github.com/jhoonb/archivex"
-	"./crc32"
+	"./crc32"    // http://www.mrwaggel.be/post/generate-crc32-hash-of-a-file-in-golang-turorial/
 	"github.com/jasonlvhit/gocron"
 )
+
+var currentBackup string
+var zip *archivex.ZipFile
 
 type configuration struct {
 	Path     string `json:"path"`
@@ -27,6 +32,24 @@ type configuration struct {
 }
 
 func main() {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		incompleteBackup := currentBackup
+		fmt.Println("[Backup] delete incomplete Backup:", incompleteBackup+".zip")
+
+		err := zip.Close()
+		if err != nil {
+			panic(err)
+		}
+
+		err = os.Remove(incompleteBackup + ".zip")
+		if err != nil {
+			panic(err)
+		}
+		os.Exit(1)
+	}()
 
 	file, _ := os.Open("config.json")
 	decoder := json.NewDecoder(file)
@@ -49,12 +72,14 @@ func main() {
 		fmt.Println()
 		for _, json := range config.Files {
 
-			zip := new(archivex.ZipFile)
+			zip = new(archivex.ZipFile)
 			zipName := config.Path + json.Name + "@" + strconv.Itoa(int(time.Now().Unix()))
 
 			zip.Create(zipName)
+			currentBackup = zipName
 			zip.AddAll(json.Path, true, json.Except)
 			zip.Close()
+			currentBackup = ""
 			fmt.Println("[Backup] Successfully archived:", zipName+".zip")
 
 			// Alle Dateien mit dem gerade erstellten
@@ -62,9 +87,14 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-
 			if len(files) != 0 {
 				if json.SkipCRCCheck == false {
+
+					// überspringen da es nix gibt zum überprüfen gibt
+					if len(files) < 2 {
+						continue
+					}
+
 					// newhash vom gerade erstellten Backup
 					newhash, err := crc32.Hash_file_crc32(zipName + ".zip")
 					if err != nil {
