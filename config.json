@@ -1,5 +1,6 @@
 {
   "path": ".\\save\\",
+  "runonce": true,
   "interval": 60,
   "files": [{
     "name": "world123",

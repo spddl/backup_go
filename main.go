@@ -21,6 +21,7 @@ var zip *archivex.ZipFile
 
 type configuration struct {
 	Path     string `json:"path"`
+	RunOnce  bool   `json:"runonce"`
 	Interval int    `json:"interval"`
 	Files    []struct {
 		Name          string   `json:"name"`
@@ -34,8 +35,10 @@ type configuration struct {
 func main() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
 		<-c
+		fmt.Println("Interrupt")
 		incompleteBackup := currentBackup
 		fmt.Println("[Backup] delete incomplete Backup:", incompleteBackup+".zip")
 
@@ -71,17 +74,15 @@ func main() {
 	backup := func() {
 		fmt.Println()
 		for _, json := range config.Files {
-
 			zip = new(archivex.ZipFile)
 			zipName := config.Path + json.Name + "@" + strconv.Itoa(int(time.Now().Unix()))
-
 			zip.Create(zipName)
 			currentBackup = zipName
+			start := time.Now()
 			zip.AddAll(json.Path, true, json.Except)
 			zip.Close()
 			currentBackup = ""
-			fmt.Println("[Backup] Successfully archived:", zipName+".zip")
-
+			fmt.Println("[Backup] Successfully archived:", zipName+".zip, elapsed", time.Since(start))
 			// Alle Dateien mit dem gerade erstellten
 			files, err := readDir(config.Path, json.Name+"@")
 			if err != nil {
@@ -138,10 +139,15 @@ func main() {
 		}
 	}
 
+	Allstart := time.Now()
 	backup()
-	s := gocron.NewScheduler()
-	s.Every(uint64(config.Interval)).Seconds().Do(backup)
-	<-s.Start()
+	fmt.Println("[Backup] took", time.Since(Allstart))
+
+	if config.RunOnce != true {
+		s := gocron.NewScheduler()
+		s.Every(uint64(config.Interval)).Seconds().Do(backup)
+		<-s.Start()
+	}
 }
 
 func readDir(root, limitation string) ([]string, error) {
