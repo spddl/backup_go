@@ -465,13 +465,6 @@ func addAll(dir string, rootDir string, includeCurrentFolder bool, except []stri
 	return nil
 }
 
-// if containsArr(args, full) {
-// 	fmt.Println("skip", full)
-// 	continue
-// } else {
-// 	fmt.Println("full", full)
-// }
-
 func containsArr(s []string, e string) bool {
 	for _, a := range s {
 		if strings.Contains(e, a) {

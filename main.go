@@ -1,19 +1,19 @@
 package main
 
 import (
+	"./archivex" // "github.com/jhoonb/archivex"
+	"./crc32"    // http://www.mrwaggel.be/post/generate-crc32-hash-of-a-file-in-golang-turorial/
 	"encoding/json"
 	"fmt"
+	"github.com/jasonlvhit/gocron"
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-
-	"./archivex" // "github.com/jhoonb/archivex"
-	"./crc32"    // http://www.mrwaggel.be/post/generate-crc32-hash-of-a-file-in-golang-turorial/
-	"github.com/jasonlvhit/gocron"
 )
 
 var currentBackup string
@@ -38,7 +38,6 @@ func main() {
 
 	go func() {
 		<-c
-		fmt.Println("Interrupt")
 		incompleteBackup := currentBackup
 		fmt.Println("[Backup] delete incomplete Backup:", incompleteBackup+".zip")
 
@@ -54,11 +53,13 @@ func main() {
 		os.Exit(1)
 	}()
 
-	file, _ := os.Open("config.json")
+	file, err := os.Open("config.json")
+	if err != nil {
+		panic(err)
+	}
 	decoder := json.NewDecoder(file)
 	config := configuration{}
-	err := decoder.Decode(&config)
-
+	err = decoder.Decode(&config)
 	if err != nil {
 		fmt.Println("[Backup] Unable to load config.json, are you sure it's present? Error:", err.Error())
 		os.Exit(1)
@@ -74,20 +75,29 @@ func main() {
 	backup := func() {
 		fmt.Println()
 		for _, json := range config.Files {
+
 			zip = new(archivex.ZipFile)
 			zipName := config.Path + json.Name + "@" + strconv.Itoa(int(time.Now().Unix()))
+
 			zip.Create(zipName)
 			currentBackup = zipName
 			start := time.Now()
-			zip.AddAll(json.Path, true, json.Except)
+
+			if fileExists(filepath.Join(json.Path, ".gitignore")) {
+				zip.AddAllGitIgnore(json.Path, true, filepath.Join(json.Path, ".gitignore"))
+			} else {
+				zip.AddAll(json.Path, true, json.Except)
+			}
 			zip.Close()
 			currentBackup = ""
 			fmt.Println("[Backup] Successfully archived:", zipName+".zip, elapsed", time.Since(start))
+
 			// Alle Dateien mit dem gerade erstellten
 			files, err := readDir(config.Path, json.Name+"@")
 			if err != nil {
 				panic(err)
 			}
+
 			if len(files) != 0 {
 				if json.SkipCRCCheck == false {
 
@@ -165,4 +175,12 @@ func readDir(root, limitation string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func fileExists(filename string) bool { // https://golangcode.com/check-if-a-file-exists/
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }
